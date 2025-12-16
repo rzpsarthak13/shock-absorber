@@ -1,0 +1,9 @@
+
+
+025/12/17 01:03:48 [MYSQL] Executing statement: INSERT INTO payment (id, amount, currency, upi_transaction_id, upi_reference_id, tenant_id, customer_id, leg, action, status, payer, payees, meta, resp_meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) with args: [pay_1765913059463074_600 10000 INR txn_perf_600 perf_test_1765913059463074_600 tenant_001 cust_001 PAYER PAY PENDING {"name":"Test User 600","vpa":"user@upi"} [{"amount":10000,"name":"Merchant","vpa":"merchant@upi"}] {"msg_id":"msg_perf_600","note":"Performance test request #600"} {"timestamp":1765913059}]
+2025/12/17 01:03:48 [MYSQL] Statement executed successfully (rows affected: 1)
+2025/12/17 01:03:48 [TABLE] CREATE successful, rows affected: 1
+2025/12/17 01:03:48 [TABLE] [2025-12-17 01:03:48.592] ✓ Successfully executed write operation to database (Duration: 11.486375ms)
+2025/12/17 01:03:48 [TABLE] [2025-12-17 01:03:48.593] === EXECUTE WRITE OPERATION END ===
+2025/12/17 01:03:48 [DRAINER] [2025-12-17 01:03:48.593] ✓ Successfully written to MySQL - Operation: CREATE, Table: payment, Key: pay_1765913059463074_600, DB Write Duration: 11.540167ms
+2025/12/17 01:03:48 [DRAINER] [2025-12-17 01:03:48.593] === OPERATION #600 COMPLETE === (Queue size: 0, Total processed: 600, Elapsed: 10m36.76650775s)

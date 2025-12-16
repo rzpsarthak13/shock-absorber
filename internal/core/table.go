@@ -35,5 +35,19 @@ type Table interface {
 	// DisableKV disables KV store caching for this table.
 	// After disabling, operations will go directly to the database.
 	DisableKV() error
-}
 
+	// FindByField queries the database for a record by a non-primary key field.
+	// This is useful for querying by fields like reference_id.
+	// It first queries the database to find the primary key, then reads the record
+	// (which will check Redis cache first if KV is enabled).
+	FindByField(ctx context.Context, fieldName string, fieldValue interface{}) (map[string]interface{}, error)
+
+	// ExecuteWriteOperation executes a write operation directly to the database.
+	// This is used by the write-back drainer to process queued operations.
+	// It bypasses the KV store and writes directly to the persistent database.
+	ExecuteWriteOperation(ctx context.Context, operation *WriteOperation) error
+
+	// GetWriteBackQueue returns the write-back queue for this table.
+	// This is used by the drainer to dequeue operations.
+	GetWriteBackQueue() WriteBackQueue
+}
