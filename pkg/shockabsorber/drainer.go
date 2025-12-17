@@ -24,6 +24,18 @@ type Drainer struct {
 	queue     core.WriteBackQueue
 	table     WriteBackExecutor
 	config    DrainerConfig
+
+	// Statistics tracking
+	stats DrainerStats
+}
+
+// DrainerStats contains statistics about drainer operations.
+type DrainerStats struct {
+	mu               sync.RWMutex
+	OperationCount   int64     `json:"operation_count"`
+	FirstWriteTime   time.Time `json:"first_write_time,omitempty"`
+	LastWriteTime    time.Time `json:"last_write_time,omitempty"`
+	TotalWriteTimeNs int64     `json:"total_write_time_ns"` // Total time spent writing to DB
 }
 
 // WriteBackExecutor is the interface for executing write-back operations.
@@ -147,6 +159,43 @@ func (d *Drainer) GetConfig() DrainerConfig {
 	return d.config
 }
 
+// GetStats returns the current drainer statistics.
+func (d *Drainer) GetStats() DrainerStats {
+	d.stats.mu.RLock()
+	defer d.stats.mu.RUnlock()
+	return DrainerStats{
+		OperationCount:   d.stats.OperationCount,
+		FirstWriteTime:   d.stats.FirstWriteTime,
+		LastWriteTime:    d.stats.LastWriteTime,
+		TotalWriteTimeNs: d.stats.TotalWriteTimeNs,
+	}
+}
+
+// ResetStats resets the drainer statistics.
+func (d *Drainer) ResetStats() {
+	d.stats.mu.Lock()
+	defer d.stats.mu.Unlock()
+	d.stats.OperationCount = 0
+	d.stats.FirstWriteTime = time.Time{}
+	d.stats.LastWriteTime = time.Time{}
+	d.stats.TotalWriteTimeNs = 0
+}
+
+// recordWrite records a successful write operation.
+func (d *Drainer) recordWrite(duration time.Duration) {
+	d.stats.mu.Lock()
+	defer d.stats.mu.Unlock()
+
+	now := time.Now()
+	d.stats.OperationCount++
+	d.stats.TotalWriteTimeNs += duration.Nanoseconds()
+
+	if d.stats.FirstWriteTime.IsZero() {
+		d.stats.FirstWriteTime = now
+	}
+	d.stats.LastWriteTime = now
+}
+
 // run is the main drainer loop.
 // It continuously reads from the queue and writes to the database at the configured rate.
 func (d *Drainer) run(ctx context.Context) {
@@ -224,8 +273,11 @@ func (d *Drainer) run(ctx context.Context) {
 					continue
 				}
 
+				writeDuration := time.Since(writeStart)
+				d.recordWrite(writeDuration)
+
 				log.Printf("[DRAINER:%s] [%s] ✓ Successfully written to DB (duration: %v)",
-					d.tableName, time.Now().Format("2006-01-02 15:04:05.000"), time.Since(writeStart))
+					d.tableName, time.Now().Format("2006-01-02 15:04:05.000"), writeDuration)
 			}
 		}
 	}
