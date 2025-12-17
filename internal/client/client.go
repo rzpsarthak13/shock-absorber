@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/core"
-	"github.com/razorpay/shock-absorber/internal/database"
-	"github.com/razorpay/shock-absorber/internal/kvstore"
-	"github.com/razorpay/shock-absorber/internal/registry"
-	"github.com/razorpay/shock-absorber/internal/table"
-	"github.com/razorpay/shock-absorber/internal/writeback"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/database"
+	"github.com/rzpsarthak13/shock-absorber/internal/kvstore"
+	"github.com/rzpsarthak13/shock-absorber/internal/registry"
+	"github.com/rzpsarthak13/shock-absorber/internal/table"
+	"github.com/rzpsarthak13/shock-absorber/internal/writeback"
 )
 
 // TableConfigData represents table configuration data without importing the public package.

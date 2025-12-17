@@ -14,9 +14,9 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/razorpay/shock-absorber/internal/core"
-	"github.com/razorpay/shock-absorber/internal/writeback"
-	"github.com/razorpay/shock-absorber/pkg/shockabsorber"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/writeback"
+	"github.com/rzpsarthak13/shock-absorber/pkg/shockabsorber"
 )
 
 var (
@@ -42,10 +42,13 @@ func main() {
 	config.WriteBack.DrainRate = 1 // 1 RPS for DB writes (for performance test: 20 req/s -> 1 DB write/s)
 
 	// Kafka configuration (only used when QueueType is "kafka")
+	// Using timestamp-based GroupID to reset consumer offset on restart
+	// Change this to a fixed value if you want to resume from last committed offset
+	kafkaGroupID := fmt.Sprintf("shock-absorber-writeback-%d", time.Now().Unix())
 	config.WriteBack.KafkaConfig = shockabsorber.KafkaConfig{
 		Brokers:         []string{"localhost:9092"},
 		Topic:           "shock-absorber-writeback",
-		GroupID:         "shock-absorber-writeback",
+		GroupID:         kafkaGroupID,
 		BatchSize:       100,
 		BatchTimeout:    10 * time.Millisecond,
 		WriteTimeout:    10 * time.Second,
@@ -198,14 +201,6 @@ func startDrainer(ctx context.Context) {
 			log.Printf("[DRAINER] [%s] Stopping write-back drainer...", time.Now().Format("2006-01-02 15:04:05.000"))
 			return
 		default:
-			// Check queue size
-			queueSize := writeQueue.Size()
-			if queueSize == 0 {
-				// No operations, wait a bit before checking again
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
 			// Wait for rate limiter before processing (enforces 1 RPS limit)
 			waitStart := time.Now()
 			if err := limiter.Wait(ctx); err != nil {
@@ -218,19 +213,28 @@ func startDrainer(ctx context.Context) {
 			}
 			waitDuration := time.Since(waitStart)
 
-			// Dequeue a single operation (rate limiter controls throughput)
-			// We process one at a time to respect the rate limit precisely
-			log.Printf("[DRAINER] [%s] Rate limiter allowed operation (waited: %v, queue size: %d)",
+			// Check queue size (approximate for Kafka)
+			queueSize := writeQueue.Size()
+			log.Printf("[DRAINER] [%s] Rate limiter allowed operation (waited: %v, approximate queue size: %d)",
 				time.Now().Format("2006-01-02 15:04:05.000"), waitDuration, queueSize)
 
+			// Dequeue a single operation (rate limiter controls throughput)
+			// We process one at a time to respect the rate limit precisely
+			// Note: For Kafka, Dequeue may return 0 operations even if Size() > 0
+			// This happens if messages were already consumed and committed
 			operations, err := writeQueue.Dequeue(ctx, 1)
 			if err != nil {
 				log.Printf("[DRAINER] [%s] ERROR: Failed to dequeue operations: %v",
 					time.Now().Format("2006-01-02 15:04:05.000"), err)
+				// If dequeue fails, wait a bit before retrying
+				time.Sleep(1 * time.Second)
 				continue
 			}
 
 			if len(operations) == 0 {
+				// No messages available in Kafka (may have been consumed already)
+				// Wait a bit before checking again
+				time.Sleep(1 * time.Second)
 				continue
 			}
 

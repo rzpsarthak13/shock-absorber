@@ -3,7 +3,7 @@ package schema
 import (
 	"fmt"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // SchemaValidator validates records against schema definitions.
@@ -41,7 +41,7 @@ func (sv *SchemaValidator) ValidateRecord(record map[string]interface{}) error {
 	// Validate each column
 	for _, column := range sv.schema.Columns {
 		value, exists := record[column.Name]
-		
+
 		// Check NULL constraint
 		if !exists || value == nil {
 			if !column.Nullable {
@@ -141,4 +141,3 @@ func (sv *SchemaValidator) ValidatePrimaryKey(key interface{}) error {
 	// Validate the key type
 	return sv.validateColumnType(*pkColumn, key)
 }
-

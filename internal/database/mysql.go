@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // MySQLDatabase implements the core.Database interface using MySQL.

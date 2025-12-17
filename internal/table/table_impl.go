@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/core"
-	"github.com/razorpay/shock-absorber/internal/read"
-	schematranslator "github.com/razorpay/shock-absorber/internal/schema"
-	"github.com/razorpay/shock-absorber/internal/write"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/read"
+	schematranslator "github.com/rzpsarthak13/shock-absorber/internal/schema"
+	"github.com/rzpsarthak13/shock-absorber/internal/write"
 )
 
 // TableImpl implements the core.Table interface.

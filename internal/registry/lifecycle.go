@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // LifecycleHook defines a hook that can be executed during table lifecycle events.

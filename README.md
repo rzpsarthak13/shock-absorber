@@ -80,7 +80,7 @@ Shock Absorber is designed to handle high-traffic scenarios where your applicati
 ### Installation
 
 ```bash
-go get github.com/razorpay/shock-absorber
+go get github.com/rzpsarthak13/shock-absorber
 ```
 
 ### Basic Usage
@@ -92,7 +92,7 @@ import (
     "context"
     "time"
     
-    "github.com/razorpay/shock-absorber/pkg/shockabsorber"
+    "github.com/rzpsarthak13/shock-absorber/pkg/shockabsorber"
 )
 
 func main() {

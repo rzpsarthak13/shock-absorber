@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // TableMetadata contains metadata about a registered table.

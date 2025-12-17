@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -81,10 +81,9 @@ func NewKafkaQueue(config KafkaQueueConfig) (*KafkaQueue, error) {
 
 	// Create Kafka reader for consuming messages
 	// When using a consumer group (GroupID), Kafka manages offsets automatically.
-	// However, when a consumer group is new (no committed offset), Kafka defaults to "latest".
-	// For write-back queues, we want to process ALL messages, so we set StartOffset to FirstOffset.
-	// This ensures that if the consumer group is new, it reads from the beginning.
-	// Once offsets are committed, Kafka will use those instead of StartOffset.
+	// For write-back queues, we want to process ALL messages from the beginning.
+	// StartOffset: FirstOffset ensures new consumer groups read from the beginning.
+	// Note: If you want to resume from last committed offset, use kafka.LastOffset instead.
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     config.Brokers,
 		Topic:       config.Topic,
@@ -92,9 +91,10 @@ func NewKafkaQueue(config KafkaQueueConfig) (*KafkaQueue, error) {
 		MinBytes:    config.MinBytes,
 		MaxBytes:    config.MaxBytes,
 		MaxWait:     config.MaxWait,
-		StartOffset: kafka.FirstOffset, // Read from beginning if no committed offset exists
-		// Note: Once offsets are committed for this consumer group, Kafka will use those
-		// instead of StartOffset, so we won't re-read old messages on restart
+		StartOffset: kafka.FirstOffset, // Always read from beginning for new consumer groups
+		// Important: With a timestamp-based GroupID (changing on each restart),
+		// each restart creates a new consumer group and reads from FirstOffset.
+		// This ensures all messages in the topic are processed.
 	})
 
 	log.Printf("[KAFKA] Kafka queue initialized successfully")
@@ -163,10 +163,13 @@ func (q *KafkaQueue) Enqueue(ctx context.Context, operation *core.WriteOperation
 		produceDuration := time.Since(produceStart)
 		log.Printf("[KAFKA] [%s] ERROR: Failed to write message to Kafka topic %s: %v (Duration: %v)",
 			time.Now().Format("2006-01-02 15:04:05.000"), q.topic, err, produceDuration)
+		log.Printf("[KAFKA] [%s] ERROR: Message was NOT added to queue - Size counter will NOT increment",
+			time.Now().Format("2006-01-02 15:04:05.000"))
 		return fmt.Errorf("failed to write message to Kafka: %w", err)
 	}
 	produceDuration := time.Since(produceStart)
 
+	// Only increment size counter AFTER successful production
 	q.mu.Lock()
 	q.size++
 	currentSize := q.size
@@ -176,6 +179,7 @@ func (q *KafkaQueue) Enqueue(ctx context.Context, operation *core.WriteOperation
 		time.Now().Format("2006-01-02 15:04:05.000"), q.topic, produceDuration)
 	log.Printf("[KAFKA] [%s] Operation %s for table %s is now in Kafka queue (approximate queue size: %d)",
 		time.Now().Format("2006-01-02 15:04:05.000"), operation.Operation, operation.Table, currentSize)
+	log.Printf("[KAFKA] [%s] Message can now be consumed by consumer group", time.Now().Format("2006-01-02 15:04:05.000"))
 	return nil
 }
 
@@ -201,9 +205,9 @@ func (q *KafkaQueue) Dequeue(ctx context.Context, batchSize int) ([]*core.WriteO
 	log.Printf("[KAFKA] [%s] Attempting to consume up to %d messages...", timestamp, batchSize)
 
 	for i := 0; i < batchSize; i++ {
-		// Set a timeout for reading
+		// Set a timeout for reading (longer timeout to allow Kafka to fetch messages)
 		readStart := time.Now()
-		readCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second) // Increased from 1s to 5s
 		message, err := q.reader.ReadMessage(readCtx)
 		cancel()
 		readDuration := time.Since(readStart)
@@ -212,8 +216,10 @@ func (q *KafkaQueue) Dequeue(ctx context.Context, batchSize int) ([]*core.WriteO
 			// Check if it's a timeout (no messages available)
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				if i == 0 {
-					log.Printf("[KAFKA] [%s] No messages available in topic '%s' (timeout after %v)",
-						time.Now().Format("2006-01-02 15:04:05.000"), q.topic, readDuration)
+					log.Printf("[KAFKA] [%s] No messages available in topic '%s' (timeout after %v, consumer group: %s)",
+						time.Now().Format("2006-01-02 15:04:05.000"), q.topic, readDuration, q.groupID)
+					log.Printf("[KAFKA] [%s] NOTE: This may mean: (1) No messages in topic, (2) All messages already consumed, or (3) Consumer group offset is at end",
+						time.Now().Format("2006-01-02 15:04:05.000"))
 				}
 				break // No more messages available
 			}
@@ -243,9 +249,12 @@ func (q *KafkaQueue) Dequeue(ctx context.Context, batchSize int) ([]*core.WriteO
 			time.Now().Format("2006-01-02 15:04:05.000"), op.Operation, op.Table, op.Key, deserializeDuration)
 
 		operations = append(operations, &op)
-
-		// Commit the offset after successful read
-		// Note: In production, you might want to commit after processing
+		
+		// Store message for later commit (after successful DB write)
+		// We'll commit the offset after the operation is successfully processed
+		// This prevents message loss if DB write fails
+		// Note: We're storing the message reference, but we'll need to commit it later
+		// For now, we'll commit immediately but this should be changed to commit after DB write
 		commitStart := time.Now()
 		if err := q.reader.CommitMessages(ctx, message); err != nil {
 			commitDuration := time.Since(commitStart)
@@ -264,13 +273,17 @@ func (q *KafkaQueue) Dequeue(ctx context.Context, batchSize int) ([]*core.WriteO
 			time.Now().Format("2006-01-02 15:04:05.000"), len(operations), q.topic)
 	}
 
-	q.mu.Lock()
-	if q.size > len(operations) {
-		q.size -= len(operations)
-	} else {
-		q.size = 0
+	// Update size counter only if we actually consumed messages
+	if len(operations) > 0 {
+		q.mu.Lock()
+		if q.size >= len(operations) {
+			q.size -= len(operations)
+		} else {
+			// Size counter was inaccurate, reset it
+			q.size = 0
+		}
+		q.mu.Unlock()
 	}
-	q.mu.Unlock()
 
 	return operations, nil
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // ConsistencyHandler handles read consistency logic.

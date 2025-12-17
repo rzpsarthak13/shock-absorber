@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // Translator implements the SchemaTranslator interface.
 // It handles conversion between relational database records and key-value store formats.
 type Translator struct {
-	mapper   *TypeMapper
+	mapper    *TypeMapper
 	keyFormat string // Format for building keys: "{table}:{primary_key}"
 }
 
@@ -167,7 +167,7 @@ func (t *Translator) ToDB(record map[string]interface{}, schema *core.Schema) (s
 
 	for _, col := range schema.Columns {
 		value, exists := record[col.Name]
-		
+
 		// Skip NULL values if column is nullable and value doesn't exist
 		// For required columns, validation should have caught this
 		if !exists && col.Nullable {
@@ -176,7 +176,7 @@ func (t *Translator) ToDB(record map[string]interface{}, schema *core.Schema) (s
 
 		columns = append(columns, col.Name)
 		placeholders = append(placeholders, "?")
-		
+
 		// Convert value to DB-compatible type
 		if value != nil {
 			converted, err := t.mapper.ConvertToDBValue(value, col.Type)
@@ -253,7 +253,7 @@ func (t *Translator) ToDBUpdate(key interface{}, updates map[string]interface{},
 		}
 
 		setParts = append(setParts, fmt.Sprintf("%s = ?", colName))
-		
+
 		// Convert value to DB-compatible type
 		if value != nil {
 			converted, err := t.mapper.ConvertToDBValue(value, col.Type)
@@ -339,4 +339,3 @@ func (t *Translator) FromDB(row core.Row, schema *core.Schema) (map[string]inter
 
 	return record, nil
 }
-

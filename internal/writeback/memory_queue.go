@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 var (
@@ -16,10 +16,10 @@ var (
 // MemoryQueue implements WriteBackQueue using an in-memory channel-based queue.
 // This is useful for testing or when persistence is not required.
 type MemoryQueue struct {
-	queue chan *core.WriteOperation
-	mu    sync.RWMutex
+	queue  chan *core.WriteOperation
+	mu     sync.RWMutex
 	closed bool
-	size  int
+	size   int
 }
 
 // NewMemoryQueue creates a new in-memory write-back queue.
@@ -101,4 +101,3 @@ func (q *MemoryQueue) Close() error {
 	close(q.queue)
 	return nil
 }
-

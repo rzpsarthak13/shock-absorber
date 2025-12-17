@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 var (
@@ -177,4 +177,3 @@ func ValidateOperationType(opType core.OperationType) error {
 		return fmt.Errorf("%w: '%s'", ErrInvalidOperationType, opType)
 	}
 }
-

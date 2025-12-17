@@ -3,7 +3,7 @@ package shockabsorber
 import (
 	"context"
 
-	"github.com/razorpay/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
 )
 
 // Table provides a high-level interface for performing CRUD operations on a table.

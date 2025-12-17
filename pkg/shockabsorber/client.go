@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/razorpay/shock-absorber/internal/client"
+	"github.com/rzpsarthak13/shock-absorber/internal/client"
 	"gopkg.in/yaml.v3"
 )
 
