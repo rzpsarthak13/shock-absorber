@@ -60,6 +60,10 @@ type Client interface {
 	// This should be called when the client is no longer needed.
 	// It will also stop any running drainers.
 	Close() error
+
+	// GetDrainer returns the drainer for a specific table.
+	// This is useful for monitoring queue size and drainer status.
+	GetDrainer(tableName string) *Drainer
 }
 
 // configProvider implements client.ConfigProvider to provide config as YAML without import cycles.

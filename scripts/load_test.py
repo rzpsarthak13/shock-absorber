@@ -12,8 +12,8 @@ from datetime import datetime
 import sys
 
 API_URL = "http://localhost:8080/payment"
-REQUESTS_PER_SECOND = 10
-DURATION_SECONDS = 10
+REQUESTS_PER_SECOND = 20
+DURATION_SECONDS = 30
 TOTAL_REQUESTS = REQUESTS_PER_SECOND * DURATION_SECONDS
 INTERVAL = 1.0 / REQUESTS_PER_SECOND  # 50ms between requests
 
