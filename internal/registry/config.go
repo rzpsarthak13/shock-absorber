@@ -6,10 +6,80 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ConfigValidator is the Strategy interface for validating configuration.
+// Each backend (Redis, DynamoDB, etc.) provides its own validator to validate
+// backend-specific configuration using the Strategy pattern.
+type ConfigValidator interface {
+	// Validate validates the internal configuration for this KV store type.
+	// It should validate only the KVStore-specific configuration.
+	Validate(config *InternalConfig) error
+
+	// Type returns the type identifier for this validator (e.g., "redis", "dynamodb").
+	Type() string
+}
+
+var (
+	// validatorRegistry stores all registered config validators.
+	validatorRegistry = make(map[string]ConfigValidator)
+
+	// validatorRegistryMutex protects the validator registry from concurrent access.
+	validatorRegistryMutex sync.RWMutex
+)
+
+// ValidationStrategyRegistry provides methods to register and retrieve config validators.
+// This implements the Strategy pattern for configuration validation.
+type ValidationStrategyRegistry struct{}
+
+// RegisterValidator registers a config validator.
+// This is called automatically by each implementation's init() function.
+// Panics if validator is nil, type is empty, or type is already registered.
+func (r *ValidationStrategyRegistry) Register(validator ConfigValidator) {
+	if validator == nil {
+		panic("validator cannot be nil")
+	}
+	if validator.Type() == "" {
+		panic("validator type cannot be empty")
+	}
+
+	validatorRegistryMutex.Lock()
+	defer validatorRegistryMutex.Unlock()
+
+	if _, exists := validatorRegistry[validator.Type()]; exists {
+		panic(fmt.Sprintf("validator for type %q is already registered", validator.Type()))
+	}
+
+	validatorRegistry[validator.Type()] = validator
+}
+
+// Get retrieves a validator by type.
+// Returns the validator and true if found, nil and false otherwise.
+func (r *ValidationStrategyRegistry) Get(validatorType string) (ConfigValidator, bool) {
+	validatorRegistryMutex.RLock()
+	defer validatorRegistryMutex.RUnlock()
+
+	validator, exists := validatorRegistry[validatorType]
+	return validator, exists
+}
+
+// RegisterValidator is a convenience function to register a validator using the default registry.
+// This is the preferred way to register validators from init() functions.
+func RegisterValidator(validator ConfigValidator) {
+	defaultValidationRegistry.Register(validator)
+}
+
+// GetValidator is a convenience function to retrieve a validator by type using the default registry.
+func GetValidator(validatorType string) (ConfigValidator, bool) {
+	return defaultValidationRegistry.Get(validatorType)
+}
+
+// defaultValidationRegistry is the default instance of ValidationStrategyRegistry.
+var defaultValidationRegistry = &ValidationStrategyRegistry{}
 
 // ConfigManager handles loading and managing configuration from various sources.
 type ConfigManager struct {
@@ -27,12 +97,15 @@ func NewConfigManager() *ConfigManager {
 func defaultInternalConfig() *InternalConfig {
 	return &InternalConfig{
 		KVStore: InternalKVStoreConfig{
-			Type:         "redis",
-			Endpoints:    []string{"localhost:6379"},
-			ClusterMode:  false,
+			Type: "redis",
+			RedisConfig: InternalRedisConfig{
+				Endpoints:    []string{"localhost:6379"},
+				ClusterMode:  false,
+				DB:           0,
+				PoolSize:     10,
+				MinIdleConns: 5,
+			},
 			MaxRetries:   3,
-			PoolSize:     10,
-			MinIdleConns: 5,
 			DialTimeout:  5 * time.Second,
 			ReadTimeout:  3 * time.Second,
 			WriteTimeout: 3 * time.Second,
@@ -154,18 +227,18 @@ func (cm *ConfigManager) LoadFromEnv() error {
 		config.KVStore.Type = val
 	}
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_ENDPOINTS"); val != "" {
-		config.KVStore.Endpoints = strings.Split(val, ",")
+		config.KVStore.RedisConfig.Endpoints = strings.Split(val, ",")
 	}
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_CLUSTER_MODE"); val != "" {
-		config.KVStore.ClusterMode = (val == "true" || val == "1")
+		config.KVStore.RedisConfig.ClusterMode = (val == "true" || val == "1")
 	}
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_PASSWORD"); val != "" {
-		config.KVStore.Password = val
+		config.KVStore.RedisConfig.Password = val
 	}
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_DB"); val != "" {
 		var db int
 		if _, err := fmt.Sscanf(val, "%d", &db); err == nil {
-			config.KVStore.DB = db
+			config.KVStore.RedisConfig.DB = db
 		}
 	}
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_MAX_RETRIES"); val != "" {
@@ -177,7 +250,7 @@ func (cm *ConfigManager) LoadFromEnv() error {
 	if val := os.Getenv("SHOCK_ABSORBER_KVSTORE_POOL_SIZE"); val != "" {
 		var size int
 		if _, err := fmt.Sscanf(val, "%d", &size); err == nil {
-			config.KVStore.PoolSize = size
+			config.KVStore.RedisConfig.PoolSize = size
 		}
 	}
 
@@ -318,19 +391,22 @@ func (cm *ConfigManager) GetTableConfig(tableName string) InternalTableConfig {
 }
 
 // validateConfig validates the configuration and returns an error if invalid.
+// Uses Strategy pattern for KVStore validation - no if-else statements needed.
 func (cm *ConfigManager) validateConfig(config *InternalConfig) error {
-	// Validate KV Store configuration
+	// Validate KV Store configuration using Strategy pattern
 	if config.KVStore.Type == "" {
 		return fmt.Errorf("kvstore.type is required")
 	}
-	if config.KVStore.Type != "redis" && config.KVStore.Type != "elasticache" {
-		return fmt.Errorf("kvstore.type must be 'redis' or 'elasticache'")
+
+	// Get validator from registry based on config type (Strategy pattern)
+	validator, exists := GetValidator(config.KVStore.Type)
+	if !exists {
+		return fmt.Errorf("unsupported KV store type: %s", config.KVStore.Type)
 	}
-	if len(config.KVStore.Endpoints) == 0 {
-		return fmt.Errorf("kvstore.endpoints must contain at least one endpoint")
-	}
-	if config.KVStore.PoolSize <= 0 {
-		return fmt.Errorf("kvstore.pool_size must be greater than 0")
+
+	// Use strategy - validator.Validate handles the specific validation
+	if err := validator.Validate(config); err != nil {
+		return fmt.Errorf("kvstore validation failed: %w", err)
 	}
 
 	// Validate Database configuration

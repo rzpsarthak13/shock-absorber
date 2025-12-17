@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/rzpsarthak13/shock-absorber/internal/core"
+	"github.com/rzpsarthak13/shock-absorber/internal/registry"
 )
 
 // RedisKVStore implements the core.KVStore interface using Redis.
@@ -232,4 +234,141 @@ func (r *RedisKVStore) ListTrim(ctx context.Context, key string, start, stop int
 		return fmt.Errorf("KV store is closed")
 	}
 	return r.client.LTrim(ctx, key, start, stop).Err()
+}
+
+// RedisKVStoreFactory implements the KVStoreFactory interface for Redis.
+// This factory creates Redis KV store instances using the Strategy pattern.
+type RedisKVStoreFactory struct{}
+
+// Type returns the type identifier for this factory.
+func (f *RedisKVStoreFactory) Type() string {
+	return "redis"
+}
+
+// Validate validates the Redis-specific configuration.
+func (f *RedisKVStoreFactory) Validate(config KVStoreConfig) error {
+	if config.Type != "redis" {
+		return fmt.Errorf("invalid type for Redis factory: %s", config.Type)
+	}
+	if len(config.Endpoints) == 0 {
+		return fmt.Errorf("at least one endpoint is required for Redis")
+	}
+	if config.DB < 0 || config.DB > 15 {
+		return fmt.Errorf("Redis DB must be between 0 and 15, got: %d", config.DB)
+	}
+	if config.PoolSize <= 0 {
+		return fmt.Errorf("pool_size must be greater than 0, got: %d", config.PoolSize)
+	}
+	if config.MinIdleConns < 0 {
+		return fmt.Errorf("min_idle_conns must be non-negative, got: %d", config.MinIdleConns)
+	}
+	if config.DialTimeout <= 0 {
+		return fmt.Errorf("dial_timeout must be greater than 0, got: %d", config.DialTimeout)
+	}
+	if config.ReadTimeout <= 0 {
+		return fmt.Errorf("read_timeout must be greater than 0, got: %d", config.ReadTimeout)
+	}
+	if config.WriteTimeout <= 0 {
+		return fmt.Errorf("write_timeout must be greater than 0, got: %d", config.WriteTimeout)
+	}
+	return nil
+}
+
+// Create creates a new Redis KV store instance based on the provided configuration.
+func (f *RedisKVStoreFactory) Create(config KVStoreConfig) (core.KVStore, error) {
+	// Convert nanoseconds to time.Duration
+	dialTimeout := time.Duration(config.DialTimeout)
+	readTimeout := time.Duration(config.ReadTimeout)
+	writeTimeout := time.Duration(config.WriteTimeout)
+
+	// Create Redis KV store using the existing constructor
+	redisStore, err := NewRedisKVStore(
+		config.Endpoints,
+		config.Password,
+		config.DB,
+		config.PoolSize,
+		config.MinIdleConns,
+		dialTimeout,
+		readTimeout,
+		writeTimeout,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Redis KV store: %w", err)
+	}
+
+	return redisStore, nil
+}
+
+// RedisConfigValidator implements the ConfigValidator interface for Redis.
+// This validator validates Redis-specific configuration using the Strategy pattern.
+type RedisConfigValidator struct{}
+
+// Type returns the type identifier for this validator.
+func (v *RedisConfigValidator) Type() string {
+	return "redis"
+}
+
+// Validate validates the Redis-specific configuration in the internal config.
+func (v *RedisConfigValidator) Validate(config *registry.InternalConfig) error {
+	if config == nil {
+		return fmt.Errorf("config cannot be nil")
+	}
+
+	kvConfig := config.KVStore
+
+	// Validate type
+	if kvConfig.Type != "redis" {
+		return fmt.Errorf("invalid type for Redis validator: %s", kvConfig.Type)
+	}
+
+	// Validate endpoints
+	redisConfig := kvConfig.RedisConfig
+	if len(redisConfig.Endpoints) == 0 {
+		return fmt.Errorf("at least one endpoint is required for Redis")
+	}
+
+	// Validate DB (Redis supports 0-15 databases)
+	if redisConfig.DB < 0 || redisConfig.DB > 15 {
+		return fmt.Errorf("Redis DB must be between 0 and 15, got: %d", redisConfig.DB)
+	}
+
+	// Validate pool size
+	if redisConfig.PoolSize <= 0 {
+		return fmt.Errorf("pool_size must be greater than 0, got: %d", redisConfig.PoolSize)
+	}
+
+	// Validate min idle connections
+	if redisConfig.MinIdleConns < 0 {
+		return fmt.Errorf("min_idle_conns must be non-negative, got: %d", redisConfig.MinIdleConns)
+	}
+
+	// Validate timeouts
+	if kvConfig.DialTimeout <= 0 {
+		return fmt.Errorf("dial_timeout must be greater than 0, got: %v", kvConfig.DialTimeout)
+	}
+	if kvConfig.ReadTimeout <= 0 {
+		return fmt.Errorf("read_timeout must be greater than 0, got: %v", kvConfig.ReadTimeout)
+	}
+	if kvConfig.WriteTimeout <= 0 {
+		return fmt.Errorf("write_timeout must be greater than 0, got: %v", kvConfig.WriteTimeout)
+	}
+
+	// Validate max retries
+	if kvConfig.MaxRetries < 0 {
+		return fmt.Errorf("max_retries must be non-negative, got: %d", kvConfig.MaxRetries)
+	}
+
+	return nil
+}
+
+// init auto-registers the Redis factory and validator on package initialization.
+// This enables the Strategy pattern - no manual registration needed.
+func init() {
+	// Register the factory (for KVStoreConfig validation and creation)
+	factory := &RedisKVStoreFactory{}
+	RegisterFactory(factory)
+
+	// Register the validator (for InternalConfig validation)
+	validator := &RedisConfigValidator{}
+	registry.RegisterValidator(validator)
 }

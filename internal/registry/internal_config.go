@@ -15,18 +15,44 @@ type InternalConfig struct {
 }
 
 // InternalKVStoreConfig contains configuration for the key-value store.
+// Supports multiple NoSQL backends (Redis, DynamoDB, Cassandra, etc.) through a plugin-based architecture.
 type InternalKVStoreConfig struct {
-	Type         string
+	Type            string                  `yaml:"type" json:"type"`
+	RedisConfig     InternalRedisConfig     `yaml:"redis_config,omitempty" json:"redis_config,omitempty"`
+	DynamoDBConfig  InternalDynamoDBConfig  `yaml:"dynamodb_config,omitempty" json:"dynamodb_config,omitempty"`
+	CassandraConfig InternalCassandraConfig `yaml:"cassandra_config,omitempty" json:"cassandra_config,omitempty"`
+	MaxRetries      int                     `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
+	DialTimeout     time.Duration           `yaml:"dial_timeout,omitempty" json:"dial_timeout,omitempty"`
+	ReadTimeout     time.Duration           `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty"`
+	WriteTimeout    time.Duration           `yaml:"write_timeout,omitempty" json:"write_timeout,omitempty"`
+}
+
+// InternalRedisConfig contains Redis-specific configuration.
+type InternalRedisConfig struct {
 	Endpoints    []string
 	ClusterMode  bool
 	Password     string
 	DB           int
-	MaxRetries   int
 	PoolSize     int
 	MinIdleConns int
-	DialTimeout  time.Duration
-	ReadTimeout  time.Duration
-	WriteTimeout time.Duration
+}
+
+// InternalDynamoDBConfig contains DynamoDB-specific configuration.
+type InternalDynamoDBConfig struct {
+	Region          string `yaml:"region" json:"region"`
+	TableName       string `yaml:"table_name" json:"table_name"`
+	Endpoint        string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	AccessKeyID     string `yaml:"access_key_id,omitempty" json:"access_key_id,omitempty"`
+	SecretAccessKey string `yaml:"secret_access_key,omitempty" json:"secret_access_key,omitempty"`
+}
+
+// InternalCassandraConfig contains Cassandra-specific configuration (future support).
+type InternalCassandraConfig struct {
+	Hosts            []string
+	Keyspace         string
+	ConsistencyLevel string
+	Username         string
+	Password         string
 }
 
 // InternalDatabaseConfig contains configuration for the persistent database.

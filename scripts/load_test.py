@@ -2,7 +2,7 @@
 """
 Performance Test Script for Shock Absorber
 Sends 20 requests per second for 30 seconds (600 total requests)
-DB is configured to write at 1 request per second
+Tracks how long it takes for all writes to complete in the primary database
 """
 
 import requests
@@ -10,12 +10,14 @@ import time
 import json
 from datetime import datetime
 import sys
+import subprocess
 
 API_URL = "http://localhost:8080/payment"
-REQUESTS_PER_SECOND = 10
-DURATION_SECONDS = 10
+REQUESTS_PER_SECOND = 20
+DURATION_SECONDS = 30
 TOTAL_REQUESTS = REQUESTS_PER_SECOND * DURATION_SECONDS
 INTERVAL = 1.0 / REQUESTS_PER_SECOND  # 50ms between requests
+DB_CHECK_INTERVAL = 2  # Check DB every 2 seconds
 
 def generate_payment(request_count):
     """Generate a unique payment payload"""
@@ -54,18 +56,76 @@ def generate_payment(request_count):
         }
     }
 
+def get_db_payment_count():
+    """Get the count of payments in the MySQL database"""
+    try:
+        result = subprocess.run(
+            ["docker", "exec", "mysql", "mysql", "-uroot", "-ppassword", "testdb", 
+             "-e", "SELECT COUNT(*) as count FROM payment;"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            # Parse the output to get the count
+            lines = result.stdout.strip().split('\n')
+            if len(lines) >= 2:
+                # Second line should contain the count
+                count_str = lines[1].strip()
+                try:
+                    return int(count_str)
+                except ValueError:
+                    return 0
+        return 0
+    except Exception as e:
+        return -1  # Error
+
+def wait_for_all_db_writes(expected_count, start_time):
+    """Wait until all writes are complete in the database"""
+    print(f"\nWaiting for all {expected_count} writes to complete in database...")
+    print("Checking database every 2 seconds...")
+    
+    last_count = 0
+    check_count = 0
+    
+    while True:
+        time.sleep(DB_CHECK_INTERVAL)
+        check_count += 1
+        current_count = get_db_payment_count()
+        
+        if current_count == -1:
+            print(f"[Check {check_count}] Error checking database, retrying...")
+            continue
+        
+        if current_count >= expected_count:
+            elapsed = time.time() - start_time
+            print(f"[Check {check_count}] ✓ All {expected_count} payments written to database!")
+            print(f"  Current DB count: {current_count}")
+            return elapsed
+        
+        if current_count != last_count:
+            elapsed = time.time() - start_time
+            print(f"[Check {check_count}] DB count: {current_count}/{expected_count} "
+                  f"(+{current_count - last_count} since last check, elapsed: {elapsed:.1f}s)")
+            last_count = current_count
+        elif check_count % 5 == 0:
+            # Print status every 5 checks even if no change
+            elapsed = time.time() - start_time
+            print(f"[Check {check_count}] DB count: {current_count}/{expected_count} "
+                  f"(elapsed: {elapsed:.1f}s)")
+
 def main():
-    print("=" * 50)
+    print("=" * 70)
     print("Shock Absorber Performance Test")
-    print("=" * 50)
+    print("=" * 70)
     print(f"API URL: {API_URL}")
     print(f"Request Rate: {REQUESTS_PER_SECOND} requests/second")
     print(f"Duration: {DURATION_SECONDS} seconds")
     print(f"Total Requests: {TOTAL_REQUESTS}")
-    print(f"DB Write Rate: 1 request/second (configured)")
+    print(f"DB Write Rate: Configured in test-server (check config)")
     print(f"Expected: All requests should be accepted immediately")
-    print(f"Expected: DB writes will take ~{TOTAL_REQUESTS} seconds to complete")
-    print("=" * 50)
+    print(f"Expected: DB writes will be processed by background drainer")
+    print("=" * 70)
     print()
     
     # Check if server is running
@@ -134,25 +194,43 @@ def main():
         print("\nTest interrupted by user")
     
     end_time = time.time()
-    total_duration = end_time - start_time
-    actual_rate = request_count / total_duration if total_duration > 0 else 0
+    request_duration = end_time - start_time
+    actual_rate = request_count / request_duration if request_duration > 0 else 0
     
     print()
-    print("=" * 50)
-    print("Load Test Complete")
-    print("=" * 50)
-    print(f"Finished at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 70)
+    print("Request Phase Complete")
+    print("=" * 70)
+    print(f"Finished sending requests at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Total Requests Sent: {request_count}")
     print(f"Successful: {success_count}")
     print(f"Errors: {error_count}")
-    print(f"Total Duration: {total_duration:.2f}s")
+    print(f"Request Duration: {request_duration:.2f}s")
     print(f"Actual Rate: {actual_rate:.2f} requests/second")
     print()
-    print("Note: Check server logs to see:")
-    print("  - Queue size growing as requests come in")
-    print("  - DB writes happening at 1 RPS rate")
-    print("  - Queue draining over time")
-    print("=" * 50)
+    
+    # Now wait for all DB writes to complete
+    if success_count > 0:
+        db_write_duration = wait_for_all_db_writes(success_count, start_time)
+        total_time = time.time() - start_time
+        
+        print()
+        print("=" * 70)
+        print("Final Results")
+        print("=" * 70)
+        print(f"Total Requests: {request_count}")
+        print(f"Successful Requests: {success_count}")
+        print(f"Request Phase Duration: {request_duration:.2f}s")
+        print(f"DB Write Completion Time: {db_write_duration:.2f}s")
+        print(f"Total Test Duration: {total_time:.2f}s")
+        print()
+        print(f"✓ All {success_count} payments written to primary database!")
+        print(f"  Time to complete all DB writes: {db_write_duration:.2f} seconds")
+        print(f"  Average DB write rate: {success_count/db_write_duration:.2f} writes/second")
+        print("=" * 70)
+    else:
+        print("No successful requests to track in database.")
+        print("=" * 70)
 
 if __name__ == "__main__":
     main()

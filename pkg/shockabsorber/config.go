@@ -24,11 +24,41 @@ type Config struct {
 }
 
 // KVStoreConfig contains configuration for the key-value store.
+// Supports multiple NoSQL backends (Redis, DynamoDB, Cassandra, etc.) through a plugin-based architecture.
 type KVStoreConfig struct {
-	// Type specifies the KV store type. Currently supports "redis" or "elasticache".
+	// Type specifies the KV store type. Supports "redis", "dynamodb", "cassandra", etc.
 	Type string `yaml:"type" json:"type"`
 
-	// Endpoints is a list of Redis/ElastiCache endpoints.
+	// RedisConfig contains Redis-specific configuration.
+	// Only used when Type is "redis".
+	RedisConfig RedisConfig `yaml:"redis_config,omitempty" json:"redis_config,omitempty"`
+
+	// DynamoDBConfig contains DynamoDB-specific configuration.
+	// Only used when Type is "dynamodb".
+	DynamoDBConfig DynamoDBConfig `yaml:"dynamodb_config,omitempty" json:"dynamodb_config,omitempty"`
+
+	// CassandraConfig contains Cassandra-specific configuration.
+	// Only used when Type is "cassandra" (future support).
+	CassandraConfig CassandraConfig `yaml:"cassandra_config,omitempty" json:"cassandra_config,omitempty"`
+
+	// Common configuration fields shared across all backends.
+
+	// MaxRetries is the maximum number of retries for failed operations.
+	MaxRetries int `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
+
+	// DialTimeout is the timeout for establishing connections.
+	DialTimeout time.Duration `yaml:"dial_timeout,omitempty" json:"dial_timeout,omitempty"`
+
+	// ReadTimeout is the timeout for read operations.
+	ReadTimeout time.Duration `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty"`
+
+	// WriteTimeout is the timeout for write operations.
+	WriteTimeout time.Duration `yaml:"write_timeout,omitempty" json:"write_timeout,omitempty"`
+}
+
+// RedisConfig contains Redis-specific configuration.
+type RedisConfig struct {
+	// Endpoints is a list of Redis endpoints.
 	// For single-node Redis, use a single endpoint.
 	// For cluster mode, provide all cluster endpoints.
 	Endpoints []string `yaml:"endpoints" json:"endpoints"`
@@ -42,23 +72,48 @@ type KVStoreConfig struct {
 	// DB is the Redis database number (0-15). Only used in non-cluster mode.
 	DB int `yaml:"db,omitempty" json:"db,omitempty"`
 
-	// MaxRetries is the maximum number of retries for failed operations.
-	MaxRetries int `yaml:"max_retries,omitempty" json:"max_retries,omitempty"`
-
 	// PoolSize is the connection pool size per node.
 	PoolSize int `yaml:"pool_size,omitempty" json:"pool_size,omitempty"`
 
 	// MinIdleConns is the minimum number of idle connections in the pool.
 	MinIdleConns int `yaml:"min_idle_conns,omitempty" json:"min_idle_conns,omitempty"`
+}
 
-	// DialTimeout is the timeout for establishing connections.
-	DialTimeout time.Duration `yaml:"dial_timeout,omitempty" json:"dial_timeout,omitempty"`
+// DynamoDBConfig contains DynamoDB-specific configuration.
+type DynamoDBConfig struct {
+	// Region is the AWS region where the DynamoDB table is located.
+	Region string `yaml:"region" json:"region"`
 
-	// ReadTimeout is the timeout for read operations.
-	ReadTimeout time.Duration `yaml:"read_timeout,omitempty" json:"read_timeout,omitempty"`
+	// TableName is the name of the DynamoDB table to use for caching.
+	TableName string `yaml:"table_name" json:"table_name"`
 
-	// WriteTimeout is the timeout for write operations.
-	WriteTimeout time.Duration `yaml:"write_timeout,omitempty" json:"write_timeout,omitempty"`
+	// Endpoint is an optional custom endpoint URL (e.g., for LocalStack).
+	// If empty, uses the default AWS DynamoDB endpoint for the region.
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+
+	// AccessKeyID is the AWS access key ID (optional, can use IAM role instead).
+	AccessKeyID string `yaml:"access_key_id,omitempty" json:"access_key_id,omitempty"`
+
+	// SecretAccessKey is the AWS secret access key (optional, can use IAM role instead).
+	SecretAccessKey string `yaml:"secret_access_key,omitempty" json:"secret_access_key,omitempty"`
+}
+
+// CassandraConfig contains Cassandra-specific configuration (future support).
+type CassandraConfig struct {
+	// Hosts is a list of Cassandra host addresses.
+	Hosts []string `yaml:"hosts" json:"hosts"`
+
+	// Keyspace is the Cassandra keyspace to use.
+	Keyspace string `yaml:"keyspace" json:"keyspace"`
+
+	// ConsistencyLevel is the consistency level for operations.
+	ConsistencyLevel string `yaml:"consistency_level,omitempty" json:"consistency_level,omitempty"`
+
+	// Username is the authentication username (optional).
+	Username string `yaml:"username,omitempty" json:"username,omitempty"`
+
+	// Password is the authentication password (optional).
+	Password string `yaml:"password,omitempty" json:"password,omitempty"`
 }
 
 // DatabaseConfig contains configuration for the persistent database.
@@ -232,12 +287,15 @@ type AutoScalingConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		KVStore: KVStoreConfig{
-			Type:         "redis",
-			Endpoints:    []string{"localhost:6379"},
-			ClusterMode:  false,
+			Type: "redis",
+			RedisConfig: RedisConfig{
+				Endpoints:    []string{"localhost:6379"},
+				ClusterMode:  false,
+				DB:           0,
+				PoolSize:     10,
+				MinIdleConns: 5,
+			},
 			MaxRetries:   3,
-			PoolSize:     10,
-			MinIdleConns: 5,
 			DialTimeout:  5 * time.Second,
 			ReadTimeout:  3 * time.Second,
 			WriteTimeout: 3 * time.Second,

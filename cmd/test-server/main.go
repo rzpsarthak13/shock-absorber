@@ -23,8 +23,29 @@ func main() {
 	// 1. Configure the shock absorber
 	config := shockabsorber.DefaultConfig()
 
-	// KV Store (Redis) configuration
-	config.KVStore.Endpoints = []string{"localhost:6379"}
+	// KV Store configuration
+	// Option 1: Redis (commented out - using DynamoDB)
+	// config.KVStore.Type = "redis" // Explicitly set Redis as the KV store type
+	// config.KVStore.RedisConfig.Endpoints = []string{"localhost:6379"}
+
+	// Option 2: DynamoDB (active - using LocalStack for local testing)
+	config.KVStore.Type = "dynamodb"
+	config.KVStore.DynamoDBConfig = shockabsorber.DynamoDBConfig{
+		Region:         "us-east-1",
+		TableName:      "shock-absorber-cache",
+		Endpoint:       "http://localhost:4566", // LocalStack endpoint
+		AccessKeyID:     "test",                  // Dummy credentials for LocalStack
+		SecretAccessKey: "test",
+	}
+
+	// For AWS DynamoDB (production - uncomment to use real AWS):
+	// config.KVStore.Type = "dynamodb"
+	// config.KVStore.DynamoDBConfig = shockabsorber.DynamoDBConfig{
+	// 	Region:    "us-east-1",                    // Your AWS region
+	// 	TableName: "shock-absorber-cache",         // Your table name
+	// 	Endpoint:  "",                             // Empty for real AWS
+	// 	// AccessKeyID and SecretAccessKey are optional if using default AWS credentials
+	// }
 
 	// Database (MySQL) configuration
 	config.Database.Host = "localhost"
@@ -34,7 +55,9 @@ func main() {
 	config.Database.Password = "password"
 
 	// Write-back configuration
-	config.WriteBack.QueueType = "redis" // Options: "memory", "redis", "kafka"
+	// Note: Using "memory" queue since DynamoDB doesn't support list operations needed for Redis queue
+	// If using Redis KV store, you can use "redis" queue type
+	config.WriteBack.QueueType = "memory" // Options: "memory", "redis", "kafka"
 	config.WriteBack.DefaultTTL = 1 * time.Hour
 	config.WriteBack.DrainRate = 5 // 5 DB writes per second (adjust based on your DB capacity)
 

@@ -83,17 +83,10 @@ func NewClientImpl(configProvider ConfigProvider) (*ClientImpl, error) {
 func (c *ClientImpl) initializeConnections() error {
 	config := c.configMgr.GetConfig()
 
-	// Initialize KV store
-	kvStore, err := kvstore.NewRedisKVStore(
-		config.KVStore.Endpoints,
-		config.KVStore.Password,
-		config.KVStore.DB,
-		config.KVStore.PoolSize,
-		config.KVStore.MinIdleConns,
-		config.KVStore.DialTimeout,
-		config.KVStore.ReadTimeout,
-		config.KVStore.WriteTimeout,
-	)
+	// Initialize KV store using factory pattern (Strategy pattern)
+	// Convert InternalKVStoreConfig to KVStoreConfig for factory
+	kvStoreConfig := c.convertToKVStoreConfig(config.KVStore)
+	kvStore, err := kvstore.Create(kvStoreConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create KV store: %w", err)
 	}
@@ -122,6 +115,39 @@ func (c *ClientImpl) initializeConnections() error {
 	}
 
 	return nil
+}
+
+// convertToKVStoreConfig converts InternalKVStoreConfig to KVStoreConfig for factory usage.
+// This enables the Strategy pattern - the factory will select the appropriate implementation
+// based on the Type field, without any if-else statements in the client code.
+func (c *ClientImpl) convertToKVStoreConfig(internalConfig registry.InternalKVStoreConfig) kvstore.KVStoreConfig {
+	config := kvstore.KVStoreConfig{
+		Type:         internalConfig.Type,
+		MaxRetries:   internalConfig.MaxRetries,
+		DialTimeout:  int64(internalConfig.DialTimeout),
+		ReadTimeout:  int64(internalConfig.ReadTimeout),
+		WriteTimeout: int64(internalConfig.WriteTimeout),
+	}
+
+	// Populate backend-specific fields based on type
+	switch internalConfig.Type {
+	case "redis":
+		config.Endpoints = internalConfig.RedisConfig.Endpoints
+		config.ClusterMode = internalConfig.RedisConfig.ClusterMode
+		config.Password = internalConfig.RedisConfig.Password
+		config.DB = internalConfig.RedisConfig.DB
+		config.PoolSize = internalConfig.RedisConfig.PoolSize
+		config.MinIdleConns = internalConfig.RedisConfig.MinIdleConns
+	case "dynamodb":
+		config.Region = internalConfig.DynamoDBConfig.Region
+		config.TableName = internalConfig.DynamoDBConfig.TableName
+		config.Endpoint = internalConfig.DynamoDBConfig.Endpoint
+		config.AccessKeyID = internalConfig.DynamoDBConfig.AccessKeyID
+		config.SecretAccessKey = internalConfig.DynamoDBConfig.SecretAccessKey
+	// Future backends (Cassandra, etc.) can be added here
+	}
+
+	return config
 }
 
 // EnableKV enables KV store caching for a table.
