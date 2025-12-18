@@ -182,17 +182,7 @@ func (d *Drainer) run(ctx context.Context) {
 				continue
 			}
 
-			// Wait for rate limiter - this blocks until a token is available
-			// This is what controls the DB write rate
-			if err := limiter.Wait(ctx); err != nil {
-				if err == context.Canceled || err == context.DeadlineExceeded {
-					return
-				}
-				log.Printf("[DRAINER:%s] Rate limiter error: %v", d.tableName, err)
-				continue
-			}
-
-			// Dequeue operation(s)
+			// Dequeue operation(s) first
 			operations, err := d.queue.Dequeue(ctx, d.config.BatchSize)
 			if err != nil {
 				log.Printf("[DRAINER:%s] Dequeue error: %v", d.tableName, err)
@@ -203,9 +193,19 @@ func (d *Drainer) run(ctx context.Context) {
 				continue
 			}
 
-			// Process each operation
+			// Process each operation - enforce rate limit for EACH operation
 			for _, op := range operations {
 				if op == nil {
+					continue
+				}
+
+				// Wait for rate limiter BEFORE processing each operation
+				// This ensures exact rate limiting: 1 operation per (1/DrainRate) seconds
+				if err := limiter.Wait(ctx); err != nil {
+					if err == context.Canceled || err == context.DeadlineExceeded {
+						return
+					}
+					log.Printf("[DRAINER:%s] Rate limiter error: %v", d.tableName, err)
 					continue
 				}
 
